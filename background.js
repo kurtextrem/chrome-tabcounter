@@ -1,72 +1,31 @@
-"use strict";
+'use strict'
 
-function Counter(name, listener) {
-	this.count = 0;
-	this.name = name;
-    this.listener = listener;
-}
-Counter.prototype.setCount = function(count) {
-	this.count = count;
-    this.listener(this);
-};
-Counter.prototype.increment = function() {
-	this.setCount(this.count+1);
-};
-Counter.prototype.decrement = function() {
-	this.setCount(this.count-1);
-};
-function TabCounter(listener) {
-	Counter.call(this,"Tabs",listener);
-	var self = this;
-	chrome.tabs.query({}, function(tabs) {
-		self.setCount(tabs.length);	
-	});
-	chrome.tabs.onCreated.addListener(self.increment.bind(self));
-	chrome.tabs.onRemoved.addListener(self.decrement.bind(self));
-}
-TabCounter.prototype = new Counter();
+let counter = 0,
+	resolved = false,
+	promise = getCounter()
 
-function WindowCounter(listener) {
-	Counter.call(this,"Windows",listener);
-	var self = this;
-	chrome.windows.getAll(function(windows) {
-		self.setCount(windows.length);	
-	});
-	chrome.windows.onCreated.addListener(self.increment.bind(self));
-	chrome.windows.onRemoved.addListener(self.decrement.bind(self));
-}
-WindowCounter.prototype = new Counter();
-
-
-function onUpdate() {
-    var text = "",
-        title = mode;
-
-    if(mode !== "Windows") {
-        text += counters.Tabs.count;
-    }
-    if(mode === "Both") {
-        text += "/";
-        title = "Tabs over Windows";
-    }
-    if(mode !== "Tabs") {
-        text += counters.Windows.count;
-    }
-    chrome.browserAction.setBadgeText({text: text});
-    chrome.browserAction.setTitle({title: title});
+function getCounter() {
+	return new Promise((resolve, reject) => {
+		chrome.tabs.query({}, tabs => {
+			setCounter(+tabs.length)
+			resolved = true
+			resolve()
+		})
+	})
 }
 
-const counters = {
-    "Tabs": new TabCounter(onUpdate),
-    "Windows": new WindowCounter(onUpdate)
+function setCounter(count) {
+	counter = count
+	chrome.action.setBadgeText({ text: `${count}` })
 }
-const modes = Object.keys(counters).concat(["Both"]);
-var mode = modes[0];
 
+chrome.tabs.onCreated.addListener(async () => {
+	if (!resolved) await promise
 
-chrome.browserAction.onClicked.addListener(function() {
-	const nextIndex = (modes.indexOf(mode)+1)%modes.length;
-    mode = modes[nextIndex];
-	onUpdate();
-});
-onUpdate();
+	setCounter(counter + 1)
+})
+chrome.tabs.onRemoved.addListener(async () => {
+	if (!resolved) await promise
+
+	setCounter(counter - 1)
+})
